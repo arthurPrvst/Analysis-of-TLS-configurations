@@ -1,0 +1,274 @@
+#script gawk/awk
+BEGIN{
+	key=0
+	eckey=0
+	ecdh=0
+	name=0
+	dump=""
+	long=0
+	l=0
+	ext=0
+	dh=0
+	dhkey=0
+	website=""
+	rsasgn=0
+	dsasgn=0
+	sgn=0
+	isInClientPacket=0;
+	firstCipherSuiteOfClient=1;
+	isInServerNameOfClient=0;
+	printf ("IP Address Src;Ip Address Dst;ClientHello/ServerHello;Version;Key Exchange;Sign;Export;Cipher;Length;Block mode;MAC;Compression;Extensions;Extensions;Extensions;Extensions;Extensions;Extensions;Extensions;Extensions;Extensions")
+}
+
+#IP address Src
+/Internet Protocol.*, Src: /{
+	match($0, /Internet Protocol.*, Src: ([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)/, addrSrc)
+	match($0, /Internet Protocol.*, Dst: ([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)/, addrDst)
+	printf("\n%s;%s;", addrSrc[1] , addrDst[1])
+    
+    wasRC4_4=0;
+    wasRC4_5=0;
+    wasSEED_4=0;
+    wasSEED_5=0;
+    wasIDEA_4=0;
+    
+	key=0
+	eckey=0
+	name=0
+	ext=0
+	website=""
+	ecdh=0
+	dh=0
+	dhkey=0
+	sgn=0
+	rsasgn=0
+	dsasgn=0
+
+	ecdhe=0;
+	dhe=0;
+	rsa=0;
+	firstCipherSuiteOfClient=1;
+}
+#ClientHello ou ServerHello 
+/        Handshake Protocol: / {
+	match($0, /        Handshake Protocol: ([a-zA-Z\b]+)/, clientOuServer)
+	match($0, /        Handshake Protocol: Server ([a-zA-Z\b]+)/, serverKey)
+	match($clientOuServeur,/(Done)/,doneOuPas)
+	if(clientOuServer[1]!="Certificate" && doneOuPas[1]!="Done" && serverKey[1]!="Key"){
+		printf ("%s%s;", clientOuServer[1],"Hello")
+		if(clientOuServer[1]=="Client"){
+		    isInClientPacket=1;
+		}else{
+		    isInClientPacket=0;
+		    firstCipherSuiteOfClient=1;
+		}
+	}
+}
+#Version 
+/            Version: .*$/ {
+	printf ("%s %s;", $2, $3)
+}
+#Key length RSA
+/subjectPublicKey: .*$/ {
+	if(match($2, "3082010a02820101")!=0 && key == 0 && ecdh!=1 && dh!=1)
+		website="2048 bits;_;_;_;"
+	if(match($2, "308189028181")!=0 && key == 0 && ecdh!=1 && dh!=1)
+		website="1024 bits;_;_;_;"
+	if(match($2, "3082018a02820181")!=0 && key == 0 && ecdh!=1 && dh!=1)
+		website="3072 bits;_;_;_;"
+	if(match($2, "3081ce0281c6")!=0 && key == 0 && ecdh!=1 && dh!=1)
+		website="1576 bits;_;_;_;"
+	key=1
+}
+#Key length DH/DHE Elliptic Curve
+/Named Curve: /{
+	if(key == 2)
+		website="_;_;"
+	match($0, /[a-z]+([0-9][0-9][0-9])[a-z]+/, arr)
+
+	if(eckey == 0 && key!=2 && ecdh == 1 && dh==1)
+		website = "_;"arr[1]" bits;_;"
+	eckey=1
+}
+#Key length DH/DHE
+/Pubkey Length: /{
+	if(key == 2)
+		website="_;_;_;"
+	if(dhkey == 0 && key!=2 && ecdh != 1 && dh==1)
+		website="_;_;"$3" bits;"
+	dhkey=1
+}
+#Sgn length RSA/DSA/ECDSA
+/Signature Length: / {
+	if(sgn == 0 && rsasgn=1 && dsasgn!=1)
+		website=website"RSA "$3" bits;"
+	if(sgn == 0 && dsasgn=1 && rsasgn!=1)
+		website=website"DSA "$3-2" bits;"
+	sgn=1
+}
+#CipherSuite
+/Cipher Suite: .*$/ {
+	if(isInClientPacket==0){ #Si on est dans un paquet ServerHello
+		#print $3#" "$5" "$7$8" "$9" "$10
+		size=split($3, tab, "_")
+		if(match(tab[2],/ECDH/))
+			ecdh=1
+		if(match(tab[2],/DH/))
+			dh=1
+		if(match(tab[2],/ECDHE/))
+			ecdhe=1
+		if(match(tab[2],/DHE/))
+			dhe=1
+		if(match(tab[2],/RSA/))
+			rsa=1
+		if(match(tab[3],/DSA/))
+			dsasgn=1
+		if(match(tab[3],/RSA/))
+			rsasgn=1
+		for(elt in tab){
+			if(tab[elt] ~ "anon" && elt == 3){
+				key=2
+           		 }
+			if(tab[elt] ~ "RC4" && elt == 4){
+			   wasRC4_4=1;
+			}   
+		    if(tab[elt] ~ "RC4" && elt == 5){
+		        wasRC4_5=1;
+		    }
+		    if(tab[elt] ~ "SEED" && elt == 4){
+		        wasSEED_4=1;
+		    }
+		    if(tab[elt] ~ "SEED" && elt == 5){
+		        wasSEED_5=1;
+		    }
+		    if(tab[elt] ~ "IDEA" && elt == 4){
+		        wasIDEA_4=1;
+		    }
+			if(tab[elt] !~ "TLS" && tab[elt] !~ "WITH"){ #AFFICHAGE
+			
+                if(wasRC4_4 == 1 && elt == 5){       #spécial RC4
+                    printf ("%s;;",tab[elt])
+                }else if(wasRC4_5 == 1 && elt == 6){   #spécial RC4
+                    printf ("%s;;",tab[elt])                 
+				}else if(wasSEED_4 == 1 && elt == 4){  #spécial SEED
+                    printf("%s;;",tab[elt])
+				}else if(wasSEED_5 == 1 && elt == 5){  #spécial SEED
+                    printf("%s;;",tab[elt])
+				}else if(wasIDEA_4 == 1 && elt == 4){  #spécial IDEA
+                    printf("%s;;",tab[elt])
+				}else{                             #par défaut
+                    printf("%s;",tab[elt])
+                }    
+			}else{
+				if(tab[elt] ~ "WITH" && elt == 3)
+					printf ("_;_;")
+				if(tab[elt] ~ "WITH" && elt == 4)
+					printf("_;")
+            }
+	}
+	}else{ #Si on est dans un paquet ClientHello
+		if(firstCipherSuiteOfClient==1){
+			#print $3#" "$5" "$7$8" "$9" "$10
+		size=split($3, tab, "_")
+		if(match(tab[2],/ECDH/))
+			ecdh=1
+		if(match(tab[2],/DH/))
+			dh=1
+		if(match(tab[2],/ECDHE/))
+			ecdhe=1
+		if(match(tab[2],/DHE/))
+			dhe=1
+		if(match(tab[2],/RSA/))
+			rsa=1
+		if(match(tab[3],/DSA/))
+			dsasgn=1
+		if(match(tab[3],/RSA/))
+			rsasgn=1
+		for(elt in tab){
+			if(tab[elt] ~ "anon" && elt == 3){
+				key=2
+           		 }
+			if(tab[elt] ~ "RC4" && elt == 4){
+			   wasRC4_4=1;
+			}   
+		    if(tab[elt] ~ "RC4" && elt == 5){
+		        wasRC4_5=1;
+		    }
+		    if(tab[elt] ~ "SEED" && elt == 4){
+		        wasSEED_4=1;
+		    }
+		    if(tab[elt] ~ "SEED" && elt == 5){
+		        wasSEED_5=1;
+		    }
+		    if(tab[elt] ~ "IDEA" && elt == 4){
+		        wasIDEA_4=1;
+		    }
+			if(tab[elt] !~ "TLS" && tab[elt] !~ "WITH"){ #AFFICHAGE
+			
+                if(wasRC4_4 == 1 && elt == 5){       #spécial RC4
+                    printf ("%s;;",tab[elt])
+                }else if(wasRC4_5 == 1 && elt == 6){   #spécial RC4
+                    printf ("%s;;",tab[elt])                 
+				}else if(wasSEED_4 == 1 && elt == 4){  #spécial SEED
+                    printf("%s;;",tab[elt])
+				}else if(wasSEED_5 == 1 && elt == 5){  #spécial SEED
+                    printf("%s;;",tab[elt])
+				}else if(wasIDEA_4 == 1 && elt == 4){  #spécial IDEA
+                    printf("%s;;",tab[elt])
+				}else{                             #par défaut
+                    printf("%s;",tab[elt])
+                }    
+			}else{
+				if(tab[elt] ~ "WITH" && elt == 3)
+					printf ("_;_;")
+				if(tab[elt] ~ "WITH" && elt == 4)
+					printf("_;")
+            }
+	}
+			firstCipherSuiteOfClient=0;
+		}
+	}
+
+}
+#Extensions
+/Extension: .*$/ {#Dasn Client Hello faut récupérer le DNS
+	sub(/^[[:space:]]*Extension: /, "")
+	ext=ext+1
+	
+	if(isInClientPacket == 1 && $0 == "server_name"){
+        printf("%s:",$0)
+        isInServerNameOfClient = 1;
+	}else{
+        printf ("%s;", $0)
+	}
+}
+
+#Servname (DNS) specified by Client
+/                    Server Name:.*$/{
+    if(isInServerNameOfClient == 1){
+        split($0,dns,":");
+        gsub(/ /,"",dns[2]); #enleve les espaces (notamment au debut) du dns
+        printf("%s;",dns[2]);
+        isInServerNameOfClient = 0;
+    }
+}
+
+#Méthode de compression
+/Compression Method: .*$/ {
+	if($3 !~ "null")
+		printf ("%s;",$3)
+	else{
+		if(ecdhe==0 && ecdh==0 && dh==0 && dhe==0 && rsa==0){
+		printf (";;;;;;;no;")
+		}else{
+		printf ("no;")
+		}
+	}
+}
+
+#To always print key length and website in the same order
+/Handshake Type: Server Hello Done/{
+	printf("%s",website)
+}
+
+END{printf ("\n")}
