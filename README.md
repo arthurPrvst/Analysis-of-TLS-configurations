@@ -2,7 +2,7 @@
 
 Analysis of SSL/TLS configurations on mail servers.
 These analysis on mail servers has been done on Cisco's server list, in order to have a global vision of how the TLS protocol is used among smtp servers.
-
+I am the co-author of an article in MISC computer security magazine (MISC n°96). This article presents all my results and their analysis.[See the MISC article](https://boutique.ed-diamond.com/anciens-numeros/1304-misc-96.html). 
 
 ## How to run your own experiment
 ### Recovering a set of servers
